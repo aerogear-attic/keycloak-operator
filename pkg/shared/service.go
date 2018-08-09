@@ -43,6 +43,8 @@ func (sh *ServiceHandler) Handle(ctx context.Context, event sdk.Event) error {
 		sh.initSharedService(sharedServiceCopy)
 	case v1alpha1.SSPhaseAccepted:
 		sh.createKeycloaks(sharedServiceCopy)
+	case v1alpha1.SSPhaseProvisioned:
+		sh.createSharedServicePlan(sharedServiceCopy)
 	}
 
 	return nil
@@ -78,8 +80,7 @@ func (sh *ServiceHandler) createKeycloaks(sharedService *v1alpha1.SharedService)
 			return err
 		}
 	} else {
-		sharedService.Status.Ready = true
-		sharedService.Status.Phase = v1alpha1.SSPhaseComplete
+		sharedService.Status.Phase = v1alpha1.SSPhaseProvisioning
 		err := sdk.Update(sharedService)
 		if err != nil {
 			logrus.Errorf("error updating resource status: %v", err)
@@ -151,6 +152,102 @@ func (sh *ServiceHandler) finalizeSharedService(sharedService *v1alpha1.SharedSe
 	err := sdk.Update(sharedService)
 	if err != nil {
 		logrus.Errorf("error updating resource finalizer: %v", err)
+		return err
+	}
+	return nil
+}
+
+func (sh *ServiceHandler) createSharedServicePlan(sharedService *v1alpha1.SharedService) error {
+	sharedService.Status.Phase = v1alpha1.SSPhaseComplete
+	sharedService.Status.Ready = true
+
+	sharedServicePlanList := v1alpha1.SharedServicePlanList{
+		TypeMeta: metav1.TypeMeta{
+			Kind:       "SharedServicePlan",
+			APIVersion: "aerogear.org/v1alpha1",
+		},
+	}
+
+	err := sdk.List(sharedService.Namespace, &sharedServicePlanList, sdk.WithListOptions(&metav1.ListOptions{}))
+	if err != nil {
+		logrus.Errorf("Failed to list shared service plans: %v\n", err)
+		return err
+	}
+
+	for _, sharedServicePlan := range sharedServicePlanList.Items {
+		if sharedServicePlan.Spec.ServiceType == sharedService.Spec.ServiceType {
+			logrus.Infof("Shared service plan for %s already exists.", sharedServicePlan.Spec.ServiceType)
+			return sh.updateSharedServiceResource(sharedService)
+		}
+	}
+
+	sharedServicePlan := sh.buildSharedServicePlan(sharedService)
+	if err := sdk.Create(sharedServicePlan); err != nil {
+		logrus.Errorf("Failed to create a shared service plan: %v\n", err)
+		return err
+	}
+
+	return sh.updateSharedServiceResource(sharedService)
+}
+
+func (sh *ServiceHandler) buildSharedServicePlan(sharedService *v1alpha1.SharedService) *v1alpha1.SharedServicePlan {
+	serviceName := sharedService.Spec.ServiceType
+	schema := "http://json-schema.org/draft-04/schema#"
+	bindParams := &v1alpha1.SharedServicePlanSpecParams{
+		Schema: schema,
+		Type:   "object",
+		Properties: map[string]v1alpha1.SharedServicePlanSpecParamsProperty{
+			"Username": v1alpha1.SharedServicePlanSpecParamsProperty{
+				Type:        "string",
+				Required:    true,
+				Description: "The Keycloak admin username.",
+				Title:       "Username",
+			},
+			"ClientType": v1alpha1.SharedServicePlanSpecParamsProperty{
+				Type:        "string",
+				Required:    false,
+				Description: "The Keycloak client type.",
+				Title:       "Client Type",
+			},
+		},
+	}
+	provisionParams := &v1alpha1.SharedServicePlanSpecParams{
+		Schema: schema,
+		Type:   "object",
+		Properties: map[string]v1alpha1.SharedServicePlanSpecParamsProperty{
+			"CUSTOM_REALM_NAME": v1alpha1.SharedServicePlanSpecParamsProperty{
+				Type:        "string",
+				Required:    false,
+				Description: "The name of the realm to create in Keycloak (defaults to your namespace).",
+				Title:       "Realm Name",
+			},
+		},
+	}
+
+	return &v1alpha1.SharedServicePlan{
+		TypeMeta: metav1.TypeMeta{
+			APIVersion: "aerogear.org/v1alpha1",
+			Kind:       "SharedServicePlan",
+		},
+		ObjectMeta: metav1.ObjectMeta{
+			Namespace: sharedService.Namespace,
+			Name:      serviceName + "-slice-plan",
+		},
+		Spec: v1alpha1.SharedServicePlanSpec{
+			ServiceType:     serviceName,
+			Name:            serviceName + " Slice",
+			ID:              serviceName + "-default-slice",
+			Description:     "Slice of a shared Keycloak Service",
+			Free:            true,
+			BindParams:      *bindParams,
+			ProvisionParams: *provisionParams,
+		},
+	}
+}
+
+func (sh *ServiceHandler) updateSharedServiceResource(sharedService *v1alpha1.SharedService) error {
+	if err := sdk.Update(sharedService); err != nil {
+		logrus.Errorf("Error updating shared service resource: %v\n", err)
 		return err
 	}
 	return nil

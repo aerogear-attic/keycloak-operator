@@ -171,10 +171,13 @@ func (h *Handler) Handle(ctx context.Context, event sdk.Event) error {
 
 			siCondition := si.Status.Conditions[0]
 			if siCondition.Type == "Ready" && siCondition.Status == "True" {
-				kcCopy.Status.Phase = v1alpha1.PhaseComplete
+				kcCopy.Status.Phase = v1alpha1.PhaseProvisioned
 				kcCopy.Status.Ready = true
 			}
 		}
+
+	case v1alpha1.PhaseProvisioned:
+		return h.createSharedServicePlan(kcCopy, namespace)
 
 	case v1alpha1.PhaseComplete:
 		return h.reconcileResources(kcCopy)
@@ -361,6 +364,43 @@ func (sh *Handler) finalizeKeycloak(kc *v1alpha1.Keycloak) error {
 	err := sdk.Update(kc)
 	if err != nil {
 		logrus.Errorf("error updating resource finalizer: %v", err)
+		return err
+	}
+	return nil
+}
+
+func (h *Handler) createSharedServicePlan(kc *v1alpha1.Keycloak, namespace string) error {
+	sharedServiceList := v1alpha1.SharedServiceList{
+		TypeMeta: metav1.TypeMeta{
+			Kind:       "SharedService",
+			APIVersion: "aerogear.org/v1alpha1",
+		},
+	}
+
+	err := sdk.List(namespace, &sharedServiceList, sdk.WithListOptions(&metav1.ListOptions{}))
+	if err != nil {
+		logrus.Errorf("Failed to list shared services: %v\n", err)
+		return err
+	}
+
+	for _, sharedService := range sharedServiceList.Items {
+		if sharedService.Spec.ServiceType == KEYCLOAK_SERVICE_NAME && sharedService.Status.Phase == v1alpha1.SSPhaseProvisioning {
+			ssCopy := sharedService.DeepCopy()
+			ssCopy.Status.Phase = v1alpha1.SSPhaseProvisioned
+			if err := sdk.Update(ssCopy); err != nil {
+				logrus.Errorf("Failed to update the shared service resource: %v\n", err)
+				return err
+			}
+		}
+	}
+
+	kc.Status.Phase = v1alpha1.PhaseComplete
+	return h.updateKeycloakResource(kc)
+}
+
+func (h *Handler) updateKeycloakResource(kc *v1alpha1.Keycloak) error {
+	if err := sdk.Update(kc); err != nil {
+		logrus.Errorf("Failed to update the keycloak resource: %v\n", err)
 		return err
 	}
 	return nil

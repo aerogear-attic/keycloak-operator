@@ -88,10 +88,28 @@ type SharedServicePlan struct {
 }
 
 type SharedServicePlanSpec struct {
-	ServiceType    string                `json:"serviceType"`
-	InstanceParams *runtime.RawExtension `json:"instanceParams"`
-	BindParams     *runtime.RawExtension `json:"bindParams"`
+	ServiceType     string                      `json:"serviceType"`
+	Name            string                      `json:"name"`
+	ID              string                      `json:"id"`
+	Description     string                      `json:"description"`
+	Free            bool                        `json:"free"`
+	BindParams      SharedServicePlanSpecParams `json:"bindParams"`
+	ProvisionParams SharedServicePlanSpecParams `json:"provisionParams"`
 }
+
+type SharedServicePlanSpecParams struct {
+	Schema     string                                         `json:"$schema"`
+	Type       string                                         `json:"type"`
+	Properties map[string]SharedServicePlanSpecParamsProperty `json:"properties"`
+}
+
+type SharedServicePlanSpecParamsProperty struct {
+	Type        string `json:"type"`
+	Required    bool   `json:"required"`
+	Description string `json:"description"`
+	Title       string `json:"title"`
+}
+
 type SharedServicePlanStatus struct {
 	CommonStatus
 }
@@ -139,7 +157,9 @@ type StatusSharedConfig struct {
 type SharedServiceStatusPhase string
 
 const (
-	SSPhaseNone                              = ""
-	SSPhaseAccepted SharedServiceStatusPhase = "accepted"
-	SSPhaseComplete SharedServiceStatusPhase = "complete"
+	SSPhaseNone                                  = ""
+	SSPhaseAccepted     SharedServiceStatusPhase = "accepted"
+	SSPhaseComplete     SharedServiceStatusPhase = "complete"
+	SSPhaseProvisioning SharedServiceStatusPhase = "provisioning"
+	SSPhaseProvisioned  SharedServiceStatusPhase = "provisioned"
 )
