@@ -26,7 +26,6 @@ import (
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/clientcmd"
 	"encoding/json"
-	"time"
 )
 
 const (
@@ -75,6 +74,7 @@ func (h *Handler) Handle(ctx context.Context, event sdk.Event) error {
 	namespace := kc.ObjectMeta.Namespace
 
 	logrus.Debugf("Keycloak: %v, Phase: %v", kc.Name, kc.Status.Phase)
+	logrus.Infof("Keycloak: %v, Phase: %v", kc.Name, kc.Status.Phase)
 
 	if event.Deleted {
 		return nil
@@ -121,8 +121,13 @@ func (h *Handler) Handle(ctx context.Context, event sdk.Event) error {
 	case v1alpha1.PhaseCredentialsCreated:
 		svcClass, err := h.getServiceClass()
 		if err != nil {
-			time.Sleep(time.Second * 20)
-			return err
+			if err.Error() == "failed to find service class" {
+				// only log that we have no class, returning error will eventually reset provision
+				logrus.Info("failed to find service class")
+				return nil
+			} else {
+				return err
+			}
 		}
 
 		adminCreds, err := h.k8sClient.CoreV1().Secrets(namespace).Get(kc.Spec.AdminCredentials, metav1.GetOptions{})
