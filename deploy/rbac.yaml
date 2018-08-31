@@ -32,7 +32,11 @@ rules:
   - statefulsets
   verbs:
   - "*"
-
+- apiGroups:
+  - rbac.authorization.k8s.io
+  resources:
+  - rolebindings
+  verbs: [ get, list, create, update, delete, deletecollection, watch]
 - apiGroups:
   - template.openshift.io
   resources:
