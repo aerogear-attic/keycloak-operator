@@ -1,3 +1,0 @@
-apiVersion: aerogear.org/v1alpha1
-kind: Keycloak
-projectName: keycloak-operator

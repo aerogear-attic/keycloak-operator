@@ -1,4 +1,0 @@
-packageName: keycloak
-channels:
-- name: alpha
-  currentCSV: keycloak.v0.0.1
